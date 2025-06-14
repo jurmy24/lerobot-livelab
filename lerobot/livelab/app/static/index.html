@@ -21,6 +21,23 @@
             border-radius: 8px;
             box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
         }
+        .input-group {
+            margin: 1rem 0;
+            text-align: left;
+        }
+        .input-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: #333;
+        }
+        .input-group input {
+            width: 100%;
+            padding: 0.5rem;
+            font-size: 1rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
         button {
             padding: 1rem 2rem;
             font-size: 1.2rem;
@@ -43,19 +60,33 @@
 <body>
     <div class="container">
         <h1>Robot Arm Control</h1>
-        <button onclick="moveArm()">Move Arm</button>
+        <div class="input-group">
+            <label for="leaderPort">Leader Port:</label>
+            <input type="text" id="leaderPort" placeholder="/dev/tty.usbmodem5A460816621" value="/dev/tty.usbmodem5A460816621">
+        </div>
+        <div class="input-group">
+            <label for="followerPort">Follower Port:</label>
+            <input type="text" id="followerPort" placeholder="/dev/tty.usbmodem5A460816421" value="/dev/tty.usbmodem5A460816421">
+        </div>
+        <button onclick="moveArm()">Start Teleoperation</button>
         <div id="response"></div>
     </div>
 
     <script>
         async function moveArm() {
+            const followerPort = document.getElementById('followerPort').value;
+            const leaderPort = document.getElementById('leaderPort').value;
+            
             try {
                 const response = await fetch('/move-arm', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({})
+                    body: JSON.stringify({
+                        leader_port: leaderPort,
+                        follower_port: followerPort
+                    })
                 });
                 const data = await response.json();
                 document.getElementById('response').textContent = data.message;

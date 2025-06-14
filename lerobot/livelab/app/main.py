@@ -20,11 +20,13 @@ os.makedirs("app/static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 # Get the path to the lerobot root directory (3 levels up from this script)
-LEROBOT_PATH = str(Path(__file__).parent.parent.parent)
+LEROBOT_PATH = str(Path(__file__).parent.parent.parent.parent)
 logger.info(f"LeRobot path: {LEROBOT_PATH}")
 
-class MoveArmRequest(BaseModel):
-    pass  # Empty model since we don't need any parameters for now
+class TeleoperateRequest(BaseModel):
+    leader_port: str
+    follower_port: str
+
 
 
 @app.get("/")
@@ -34,7 +36,7 @@ def read_root():
 
 
 @app.post("/move-arm")
-def move_arm(request: MoveArmRequest):
+def teleoperate_arm(request: TeleoperateRequest):
     try:
         # Construct the command with all parameters
         env = os.environ.copy()
@@ -42,12 +44,12 @@ def move_arm(request: MoveArmRequest):
         cmd = [
             "python",
             "-m",  # Run as module
-            "lerobot.teleoperate",  # Use the module name directly since PYTHONPATH is set
+            "lerobot.teleoperate",
             "--robot.type=so101_follower",
-            "--robot.port=/dev/tty.usbmodem5A460816621",
+            f"--robot.port={request.follower_port}",
             "--robot.id=my_awesome_follower_arm",
             "--teleop.type=so101_leader",
-            "--teleop.port=/dev/tty.usbmodem5A460816421",
+            f"--teleop.port={request.leader_port}",
             "--teleop.id=my_awesome_leader_arm"
         ]
 
