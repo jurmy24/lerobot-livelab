@@ -7,10 +7,41 @@ import subprocess
 from pathlib import Path
 import logging
 import glob
+from lerobot.common.teleoperators.so101_leader import SO101LeaderConfig, SO101Leader
+from lerobot.common.robots.so101_follower import SO101FollowerConfig, SO101Follower
+from lerobot.teleoperate import teleoperate, TeleoperateConfig
+import json
+import shutil
+import select
+import sys
+import termios
+import tty
+
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def setup_keyboard():
+    """Set up keyboard for non-blocking input"""
+    old_settings = termios.tcgetattr(sys.stdin)
+    tty.setraw(sys.stdin.fileno())
+    return old_settings
+
+
+def restore_keyboard(old_settings):
+    """Restore keyboard settings"""
+    termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
+
+
+def check_quit_key():
+    """Check if 'q' key was pressed"""
+    if select.select([sys.stdin], [], [], 0) == ([sys.stdin], [], []):
+        key = sys.stdin.read(1)
+        return key.lower() == "q"
+    return False
+
 
 app = FastAPI()
 
@@ -65,48 +96,127 @@ def get_configs():
 @app.post("/move-arm")
 def teleoperate_arm(request: TeleoperateRequest):
     try:
-        # Construct the command with all parameters
-        env = os.environ.copy()
-        env["PYTHONPATH"] = (
-            "../../"  # Adjust this to point to the root directory where `lerobot` lives
-        )
+        # Extract config names from file paths (remove .json extension)
+        leader_config_name = os.path.splitext(request.leader_config)[0]
+        follower_config_name = os.path.splitext(request.follower_config)[0]
 
-        # Get the full paths to the config files
-        leader_config_path = os.path.join(LEADER_CONFIG_PATH, request.leader_config)
-        follower_config_path = os.path.join(
+        # Log the full paths to check if files exist
+        leader_config_full_path = os.path.join(
+            LEADER_CONFIG_PATH, request.leader_config
+        )
+        follower_config_full_path = os.path.join(
             FOLLOWER_CONFIG_PATH, request.follower_config
         )
 
-        cmd = [
-            "python",
-            "-m",  # Run as module
-            "lerobot.teleoperate",
-            "--robot.type=so101_follower",
-            f"--robot.port={request.follower_port}",
-            f"--robot.id={follower_config_path}",
-            "--teleop.type=so101_leader",
-            f"--teleop.port={request.leader_port}",
-            f"--teleop.id={leader_config_path}",
-        ]
-
-        logger.info(f"Running command: {' '.join(cmd)}")
-
-        # Run the command
-        process = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env
+        logger.info(f"Checking calibration files:")
+        logger.info(f"Leader config path: {leader_config_full_path}")
+        logger.info(f"Follower config path: {follower_config_full_path}")
+        logger.info(f"Leader config exists: {os.path.exists(leader_config_full_path)}")
+        logger.info(
+            f"Follower config exists: {os.path.exists(follower_config_full_path)}"
         )
 
-        # Wait for the process to complete
-        stdout, stderr = process.communicate()
+        # Create calibration directories if they don't exist
+        leader_calibration_dir = os.path.join(
+            CALIBRATION_BASE_PATH_TELEOP, "so101_leader"
+        )
+        follower_calibration_dir = os.path.join(
+            CALIBRATION_BASE_PATH_ROBOTS, "so101_follower"
+        )
+        os.makedirs(leader_calibration_dir, exist_ok=True)
+        os.makedirs(follower_calibration_dir, exist_ok=True)
 
-        logger.info(f"Command stdout: {stdout}")
-        if stderr:
-            logger.error(f"Command stderr: {stderr}")
+        # Copy calibration files to the correct locations if they're not already there
+        leader_target_path = os.path.join(
+            leader_calibration_dir, f"{leader_config_name}.json"
+        )
+        follower_target_path = os.path.join(
+            follower_calibration_dir, f"{follower_config_name}.json"
+        )
 
-        if process.returncode == 0:
-            return {"message": "Teleoperation started successfully!", "output": stdout}
+        if not os.path.exists(leader_target_path):
+            shutil.copy2(leader_config_full_path, leader_target_path)
+            logger.info(f"Copied leader calibration to {leader_target_path}")
         else:
-            return {"message": "Error starting teleoperation", "error": stderr}, 500
+            logger.info(f"Leader calibration already exists at {leader_target_path}")
+
+        if not os.path.exists(follower_target_path):
+            shutil.copy2(follower_config_full_path, follower_target_path)
+            logger.info(f"Copied follower calibration to {follower_target_path}")
+        else:
+            logger.info(
+                f"Follower calibration already exists at {follower_target_path}"
+            )
+
+        logger.info(
+            f"Setting up robot with port: {request.follower_port} and config: {follower_config_name}"
+        )
+        robot_config = SO101FollowerConfig(
+            port=request.follower_port,
+            id=follower_config_name,
+        )
+
+        logger.info(
+            f"Setting up teleop device with port: {request.leader_port} and config: {leader_config_name}"
+        )
+        teleop_config = SO101LeaderConfig(
+            port=request.leader_port,
+            id=leader_config_name,
+        )
+
+        logger.info("Initializing robot and teleop device...")
+        robot = SO101Follower(robot_config)
+        teleop_device = SO101Leader(teleop_config)
+
+        logger.info("Connecting to devices...")
+        robot.bus.connect()
+        teleop_device.bus.connect()
+
+        # Write calibration to motors' memory
+        logger.info("Writing calibration to motors...")
+        robot.bus.write_calibration(robot.calibration)
+        teleop_device.bus.write_calibration(teleop_device.calibration)
+
+        # Connect cameras and configure motors
+        logger.info("Connecting cameras and configuring motors...")
+        for cam in robot.cameras.values():
+            cam.connect()
+        robot.configure()
+        teleop_device.configure()
+        logger.info("Successfully connected to both devices")
+
+        logger.info("Starting teleoperation loop...")
+        logger.info("Press 'q' to quit teleoperation")
+
+        # Set up keyboard for non-blocking input
+        old_settings = setup_keyboard()
+
+        # teleoperate_config = TeleoperateConfig(
+        #     teleop=teleop_config,
+        #     robot=robot_config,
+        # )
+
+        # teleoperate(
+        #     teleoperate_config,
+        # )
+        try:
+            want_to_disconnect = False
+            while not want_to_disconnect:
+                action = teleop_device.get_action()
+                robot.send_action(action)
+
+                # Check for keyboard input
+                if check_quit_key():
+                    want_to_disconnect = True
+                    logger.info("Quit key pressed, stopping teleoperation...")
+        finally:
+            # Always restore keyboard settings
+            restore_keyboard(old_settings)
+            robot.disconnect()
+            teleop_device.disconnect()
+            logger.info("Teleoperation stopped")
+
+        return {"message": "Teleoperation completed successfully"}
 
     except Exception as e:
         logger.error(f"Exception occurred: {str(e)}")
