@@ -23,11 +23,6 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 LEROBOT_PATH = str(Path(__file__).parent.parent.parent)
 logger.info(f"LeRobot path: {LEROBOT_PATH}")
 
-# Get conda executable path
-CONDA_EXE = os.environ.get("CONDA_EXE", "conda")
-logger.info(f"Using conda executable: {CONDA_EXE}")
-
-
 class MoveArmRequest(BaseModel):
     pass  # Empty model since we don't need any parameters for now
 
@@ -42,29 +37,25 @@ def read_root():
 def move_arm(request: MoveArmRequest):
     try:
         # Construct the command with all parameters
+        env = os.environ.copy()
+        env["PYTHONPATH"] = "../../"  # Adjust this to point to the root directory where `lerobot` lives
         cmd = [
-            CONDA_EXE,
-            "run",
-            "-n",
-            "lerobot",  # Use the lerobot environment
             "python",
             "-m",  # Run as module
-            "lerobot.teleoperate",  # Use module path
+            "lerobot.teleoperate",  # Use the module name directly since PYTHONPATH is set
             "--robot.type=so101_follower",
-            "--robot.port=/dev/tty.usbmodem58760431541",
-            '--robot.cameras={"front":{"type":"opencv","index_or_path":0,"width":1920,"height":1080,"fps":30}}',
-            "--robot.id=black",
+            "--robot.port=/dev/tty.usbmodem5A460816621",
+            "--robot.id=my_awesome_follower_arm",
             "--teleop.type=so101_leader",
-            "--teleop.port=/dev/tty.usbmodem58760431551",
-            "--teleop.id=blue",
-            "--display_data=false",
+            "--teleop.port=/dev/tty.usbmodem5A460816421",
+            "--teleop.id=my_awesome_leader_arm"
         ]
 
         logger.info(f"Running command: {' '.join(cmd)}")
 
         # Run the command
         process = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env
         )
 
         # Wait for the process to complete
