@@ -25,11 +25,14 @@ LEROBOT_PATH = str(Path(__file__).parent.parent.parent.parent)
 logger.info(f"LeRobot path: {LEROBOT_PATH}")
 
 # Define the calibration config paths
-CALIBRATION_BASE_PATH = os.path.expanduser(
+CALIBRATION_BASE_PATH_TELEOP = os.path.expanduser(
     "~/.cache/huggingface/lerobot/calibration/teleoperators"
 )
-LEADER_CONFIG_PATH = os.path.join(CALIBRATION_BASE_PATH, "so101_leader")
-FOLLOWER_CONFIG_PATH = os.path.join(CALIBRATION_BASE_PATH, "so101_follower")
+CALIBRATION_BASE_PATH_ROBOTS = os.path.expanduser(
+    "~/.cache/huggingface/lerobot/calibration/robots"
+)
+LEADER_CONFIG_PATH = os.path.join(CALIBRATION_BASE_PATH_TELEOP, "so101_leader")
+FOLLOWER_CONFIG_PATH = os.path.join(CALIBRATION_BASE_PATH_ROBOTS, "so101_follower")
 
 
 class TeleoperateRequest(BaseModel):
@@ -80,10 +83,10 @@ def teleoperate_arm(request: TeleoperateRequest):
             "lerobot.teleoperate",
             "--robot.type=so101_follower",
             f"--robot.port={request.follower_port}",
-            f"--robot.config={follower_config_path}",
+            f"--robot.id={follower_config_path}",
             "--teleop.type=so101_leader",
             f"--teleop.port={request.leader_port}",
-            f"--teleop.config={leader_config_path}",
+            f"--teleop.id={leader_config_path}",
         ]
 
         logger.info(f"Running command: {' '.join(cmd)}")
