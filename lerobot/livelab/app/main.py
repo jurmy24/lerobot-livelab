@@ -24,6 +24,16 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 import queue
 
+# Import our custom recording functionality
+from .recording import (
+    RecordingRequest,
+    handle_start_recording,
+    handle_stop_recording,
+    handle_exit_early,
+    handle_rerecord_episode,
+    handle_recording_status
+)
+
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -77,15 +87,13 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 LEROBOT_PATH = str(Path(__file__).parent.parent.parent.parent)
 logger.info(f"LeRobot path: {LEROBOT_PATH}")
 
-# Define the calibration config paths
-CALIBRATION_BASE_PATH_TELEOP = os.path.expanduser(
-    "~/.cache/huggingface/lerobot/calibration/teleoperators"
+# Import shared configuration constants
+from .config import (
+    CALIBRATION_BASE_PATH_TELEOP,
+    CALIBRATION_BASE_PATH_ROBOTS,
+    LEADER_CONFIG_PATH,
+    FOLLOWER_CONFIG_PATH
 )
-CALIBRATION_BASE_PATH_ROBOTS = os.path.expanduser(
-    "~/.cache/huggingface/lerobot/calibration/robots"
-)
-LEADER_CONFIG_PATH = os.path.join(CALIBRATION_BASE_PATH_TELEOP, "so101_leader")
-FOLLOWER_CONFIG_PATH = os.path.join(CALIBRATION_BASE_PATH_ROBOTS, "so101_follower")
 
 
 class TeleoperateRequest(BaseModel):
@@ -474,10 +482,43 @@ async def websocket_endpoint(websocket: WebSocket):
         logger.info("🧹 WebSocket connection cleaned up")
 
 
+@app.post("/start-recording")
+def start_recording(request: RecordingRequest):
+    """Start a dataset recording session"""
+    return handle_start_recording(request, manager)
+
+
+@app.post("/stop-recording")
+def stop_recording():
+    """Stop the current recording session"""
+    return handle_stop_recording()
+
+
+@app.get("/recording-status")
+def recording_status():
+    """Get the current recording status"""
+    return handle_recording_status()
+
+
+@app.post("/recording-exit-early")
+def recording_exit_early():
+    """Skip to next episode (replaces right arrow key)"""
+    return handle_exit_early()
+
+
+@app.post("/recording-rerecord-episode")
+def recording_rerecord_episode():
+    """Re-record current episode (replaces left arrow key)"""
+    return handle_rerecord_episode()
+
+
 @app.on_event("shutdown")
 async def shutdown_event():
     """Clean up resources when FastAPI shuts down"""
     logger.info("🔄 FastAPI shutting down, cleaning up...")
+    
+    # Stop any active recording - handled by recording module cleanup
+    
     if manager:
         manager.stop_broadcast_thread()
     logger.info("✅ Cleanup completed")
