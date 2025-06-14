@@ -9,11 +9,13 @@ import { cn } from "@/lib/utils";
 
 import URDFManipulator from "urdf-loader/src/urdf-manipulator-element.js";
 import { useUrdf } from "@/hooks/useUrdf";
+import { useRealTimeJoints } from "@/hooks/useRealTimeJoints";
 import {
   createUrdfViewer,
   setupMeshLoader,
   setupJointHighlighting,
   setupModelLoading,
+  URDFViewerElement,
 } from "@/lib/urdfViewerHelpers";
 
 // Register the URDFManipulator as a custom element if it hasn't been already
@@ -36,8 +38,14 @@ const UrdfViewer: React.FC = () => {
   // Add state for animation control
   useState<boolean>(isDefaultModel);
   const cleanupAnimationRef = useRef<(() => void) | null>(null);
-  const viewerRef = useRef<UrdfViewerElement | null>(null);
+  const viewerRef = useRef<URDFViewerElement | null>(null);
   const hasInitializedRef = useRef<boolean>(false);
+
+  // Real-time joint updates via WebSocket
+  const { isConnected: isWebSocketConnected } = useRealTimeJoints({
+    viewerRef,
+    enabled: isDefaultModel, // Only enable WebSocket for default model
+  });
 
   // Add state for custom URDF path
   const [customUrdfPath, setCustomUrdfPath] = useState<string | null>(null);
@@ -199,6 +207,26 @@ const UrdfViewer: React.FC = () => {
       {highlightedJoint && (
         <div className="absolute bottom-4 right-4 bg-black/70 text-white px-3 py-2 rounded-md text-sm font-mono z-10">
           Joint: {highlightedJoint}
+        </div>
+      )}
+
+      {/* WebSocket connection status */}
+      {isDefaultModel && (
+        <div className="absolute top-4 right-4 z-10">
+          <div
+            className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-mono ${
+              isWebSocketConnected
+                ? "bg-green-900/70 text-green-300"
+                : "bg-red-900/70 text-red-300"
+            }`}
+          >
+            <div
+              className={`w-2 h-2 rounded-full ${
+                isWebSocketConnected ? "bg-green-400" : "bg-red-400"
+              }`}
+            />
+            {isWebSocketConnected ? "Live Robot Data" : "Disconnected"}
+          </div>
         </div>
       )}
     </div>
