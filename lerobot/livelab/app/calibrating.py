@@ -220,6 +220,11 @@ def handle_start_teleoperation(request: TeleoperateRequest, websocket_manager=No
                     broadcast_interval = 0.05  # Broadcast every 50ms (20 FPS)
 
                     while not want_to_disconnect and teleoperation_active:
+                        # Check teleoperation_active flag first (for web stop requests)
+                        if not teleoperation_active:
+                            logger.info("Teleoperation stopped via web interface")
+                            break
+                            
                         action = teleop_device.get_action()
                         robot.send_action(action)
 
@@ -246,6 +251,9 @@ def handle_start_teleoperation(request: TeleoperateRequest, websocket_manager=No
                         if check_quit_key():
                             want_to_disconnect = True
                             logger.info("Quit key pressed, stopping teleoperation...")
+                            
+                        # Small delay to prevent excessive CPU usage and allow for responsive stopping
+                        time.sleep(0.001)  # 1ms delay
                 finally:
                     # Always restore keyboard settings
                     restore_keyboard(old_settings)
@@ -287,14 +295,47 @@ def handle_stop_teleoperation() -> Dict[str, Any]:
         return {"success": False, "message": "No teleoperation session is active"}
 
     try:
-        # Stop the teleoperation
+        logger.info("Stop teleoperation triggered from web interface")
+        
+        # Stop the teleoperation flag
         teleoperation_active = False
         
-        logger.info("Stop teleoperation triggered from web interface")
+        # Force cleanup of robot connections if they exist
+        try:
+            if current_robot:
+                logger.info("Disconnecting robot...")
+                current_robot.disconnect()
+                
+            if current_teleop:
+                logger.info("Disconnecting teleop device...")
+                current_teleop.disconnect()
+        except Exception as cleanup_error:
+            logger.warning(f"Error during device cleanup: {cleanup_error}")
+        
+        # Wait for the thread to finish (with timeout)
+        if teleoperation_thread:
+            try:
+                logger.info("Waiting for teleoperation thread to finish...")
+                # Give the thread a moment to finish gracefully
+                import time
+                time.sleep(0.5)
+                
+                # Shutdown the thread pool
+                teleoperation_thread.shutdown(wait=True, timeout=5.0)
+                logger.info("Teleoperation thread stopped")
+            except Exception as thread_error:
+                logger.warning(f"Error stopping teleoperation thread: {thread_error}")
+        
+        # Clean up global variables
+        current_robot = None
+        current_teleop = None
+        teleoperation_thread = None
+        
+        logger.info("Teleoperation stopped successfully")
 
         return {
             "success": True,
-            "message": "Teleoperation stop requested successfully",
+            "message": "Teleoperation stopped successfully",
         }
 
     except Exception as e:
