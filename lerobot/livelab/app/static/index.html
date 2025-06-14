@@ -20,6 +20,8 @@
             background-color: white;
             border-radius: 8px;
             box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            max-width: 500px;
+            width: 100%;
         }
         .input-group {
             margin: 1rem 0;
@@ -30,7 +32,7 @@
             margin-bottom: 0.5rem;
             color: #333;
         }
-        .input-group input {
+        .input-group input, .input-group select {
             width: 100%;
             padding: 0.5rem;
             font-size: 1rem;
@@ -47,6 +49,7 @@
             border-radius: 4px;
             cursor: pointer;
             transition: background-color 0.2s;
+            margin-top: 1rem;
         }
         button:hover {
             background-color: #0056b3;
@@ -65,17 +68,69 @@
             <input type="text" id="leaderPort" placeholder="/dev/tty.usbmodem5A460816621" value="/dev/tty.usbmodem5A460816621">
         </div>
         <div class="input-group">
+            <label for="leaderConfig">Leader Calibration Config:</label>
+            <select id="leaderConfig">
+                <option value="">Loading configs...</option>
+            </select>
+        </div>
+        <div class="input-group">
             <label for="followerPort">Follower Port:</label>
             <input type="text" id="followerPort" placeholder="/dev/tty.usbmodem5A460816421" value="/dev/tty.usbmodem5A460816421">
+        </div>
+        <div class="input-group">
+            <label for="followerConfig">Follower Calibration Config:</label>
+            <select id="followerConfig">
+                <option value="">Loading configs...</option>
+            </select>
         </div>
         <button onclick="moveArm()">Start Teleoperation</button>
         <div id="response"></div>
     </div>
 
     <script>
+        // Load available configs when the page loads
+        window.onload = async function() {
+            try {
+                const response = await fetch('/get-configs');
+                const data = await response.json();
+                
+                const leaderSelect = document.getElementById('leaderConfig');
+                const followerSelect = document.getElementById('followerConfig');
+                
+                // Clear loading message
+                leaderSelect.innerHTML = '';
+                followerSelect.innerHTML = '';
+                
+                // Add options for leader configs
+                data.leader_configs.forEach(config => {
+                    const option = document.createElement('option');
+                    option.value = config;
+                    option.textContent = config;
+                    leaderSelect.appendChild(option);
+                });
+                
+                // Add options for follower configs
+                data.follower_configs.forEach(config => {
+                    const option = document.createElement('option');
+                    option.value = config;
+                    option.textContent = config;
+                    followerSelect.appendChild(option);
+                });
+            } catch (error) {
+                document.getElementById('response').textContent = 'Error loading configs: ' + error.message;
+            }
+        };
+
         async function moveArm() {
             const followerPort = document.getElementById('followerPort').value;
             const leaderPort = document.getElementById('leaderPort').value;
+            const leaderConfig = document.getElementById('leaderConfig').value;
+            const followerConfig = document.getElementById('followerConfig').value;
+            
+            if (!leaderConfig || !followerConfig) {
+                document.getElementById('response').textContent = 'Please select calibration configs for both leader and follower';
+                return;
+            }
             
             try {
                 const response = await fetch('/move-arm', {
@@ -85,7 +140,9 @@
                     },
                     body: JSON.stringify({
                         leader_port: leaderPort,
-                        follower_port: followerPort
+                        follower_port: followerPort,
+                        leader_config: leaderConfig,
+                        follower_config: followerConfig
                     })
                 });
                 const data = await response.json();

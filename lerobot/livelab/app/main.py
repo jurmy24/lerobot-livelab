@@ -6,6 +6,7 @@ import os
 import subprocess
 from pathlib import Path
 import logging
+import glob
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -23,16 +24,39 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 LEROBOT_PATH = str(Path(__file__).parent.parent.parent.parent)
 logger.info(f"LeRobot path: {LEROBOT_PATH}")
 
+# Define the calibration config paths
+CALIBRATION_BASE_PATH = os.path.expanduser(
+    "~/.cache/huggingface/lerobot/calibration/teleoperators"
+)
+LEADER_CONFIG_PATH = os.path.join(CALIBRATION_BASE_PATH, "so101_leader")
+FOLLOWER_CONFIG_PATH = os.path.join(CALIBRATION_BASE_PATH, "so101_follower")
+
+
 class TeleoperateRequest(BaseModel):
     leader_port: str
     follower_port: str
-
+    leader_config: str
+    follower_config: str
 
 
 @app.get("/")
 def read_root():
-
     return FileResponse("app/static/index.html")
+
+
+@app.get("/get-configs")
+def get_configs():
+    # Get all available calibration configs
+    leader_configs = [
+        os.path.basename(f)
+        for f in glob.glob(os.path.join(LEADER_CONFIG_PATH, "*.json"))
+    ]
+    follower_configs = [
+        os.path.basename(f)
+        for f in glob.glob(os.path.join(FOLLOWER_CONFIG_PATH, "*.json"))
+    ]
+
+    return {"leader_configs": leader_configs, "follower_configs": follower_configs}
 
 
 @app.post("/move-arm")
@@ -40,17 +64,26 @@ def teleoperate_arm(request: TeleoperateRequest):
     try:
         # Construct the command with all parameters
         env = os.environ.copy()
-        env["PYTHONPATH"] = "../../"  # Adjust this to point to the root directory where `lerobot` lives
+        env["PYTHONPATH"] = (
+            "../../"  # Adjust this to point to the root directory where `lerobot` lives
+        )
+
+        # Get the full paths to the config files
+        leader_config_path = os.path.join(LEADER_CONFIG_PATH, request.leader_config)
+        follower_config_path = os.path.join(
+            FOLLOWER_CONFIG_PATH, request.follower_config
+        )
+
         cmd = [
             "python",
             "-m",  # Run as module
             "lerobot.teleoperate",
             "--robot.type=so101_follower",
             f"--robot.port={request.follower_port}",
-            "--robot.id=my_awesome_follower_arm",
+            f"--robot.config={follower_config_path}",
             "--teleop.type=so101_leader",
             f"--teleop.port={request.leader_port}",
-            "--teleop.id=my_awesome_leader_arm"
+            f"--teleop.config={leader_config_path}",
         ]
 
         logger.info(f"Running command: {' '.join(cmd)}")
