@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import os
 import subprocess
@@ -44,6 +45,15 @@ def check_quit_key():
 
 
 app = FastAPI()
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
+)
 
 # Create static directory if it doesn't exist
 os.makedirs("app/static", exist_ok=True)
@@ -203,6 +213,7 @@ def teleoperate_arm(request: TeleoperateRequest):
             want_to_disconnect = False
             while not want_to_disconnect:
                 action = teleop_device.get_action()
+                # TODO: Setup websockets to update the frontend robot here
                 robot.send_action(action)
 
                 # Check for keyboard input
